@@ -1,0 +1,13 @@
+name: Main Orchestrator
+
+on:
+  workflow_call:
+
+concurrency:
+  group: main-orchestrator-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    uses: ./.github/workflows/worker-sync.yml
+    secrets: inherit

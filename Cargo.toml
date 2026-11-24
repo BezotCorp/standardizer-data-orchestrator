@@ -1,0 +1,12 @@
+[package]
+name = "standardizer-data-orchestrator"
+version = "0.1.0"
+edition = "2024"
+description = "Orchestrate Standardizer data generation and publication"
+license = "Apache-2.0"
+repository = "https://github.com/BezotCorp/standardizer-data-orchestrator"
+publish = false
+
+[dependencies]
+ron = "0.12"
+serde = { version = "1", features = ["derive"] }

@@ -1,0 +1,114 @@
+name: Data Generation
+
+on:
+  repository_dispatch:
+    types:
+      - ron-main-updated
+
+  workflow_dispatch:
+    inputs:
+      ron_sha:
+        description: Exact standardizer-data-ron commit to generate
+        required: true
+        type: string
+
+concurrency:
+  group: standardizer-data-bin-publication
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  GENERATOR_VERSION: "1.0.1"
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Resolve RON revision
+        id: source
+        env:
+          EVENT_RON_SHA: ${{ github.event.client_payload.ron_sha }}
+          INPUT_RON_SHA: ${{ inputs.ron_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "$GITHUB_EVENT_NAME" = "repository_dispatch" ]; then
+            RON_SHA="$EVENT_RON_SHA"
+          else
+            RON_SHA="$INPUT_RON_SHA"
+          fi
+
+          if ! [[ "$RON_SHA" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            echo "::error::Invalid RON revision: $RON_SHA"
+            exit 1
+          fi
+
+          echo "ron_sha=$RON_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Generate bot token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.BEZOTCORP_RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.BEZOTCORP_RELEASE_BOT_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: |
+            standardizer-data-ron
+            standardizer-data-bin
+
+      - name: Checkout orchestrator
+        uses: actions/checkout@v4
+        with:
+          path: orchestrator
+          fetch-depth: 1
+
+      - name: Checkout exact RON source
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/standardizer-data-ron
+          ref: ${{ steps.source.outputs.ron_sha }}
+          token: ${{ steps.app-token.outputs.token }}
+          path: ron
+          fetch-depth: 1
+
+      - name: Checkout BIN storage
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/standardizer-data-bin
+          ref: main
+          token: ${{ steps.app-token.outputs.token }}
+          path: bin
+          fetch-depth: 0
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install data generator
+        run: cargo install standardizer-generate-data --version "$GENERATOR_VERSION" --locked
+
+      - name: Build orchestrator
+        working-directory: orchestrator
+        run: cargo build --locked --release
+
+      - name: Configure BIN commit identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C bin config user.name "BezotCorp Release Bot"
+          git -C bin config user.email "actions@users.noreply.github.com"
+
+      - name: Generate and publish
+        env:
+          RON_SHA: ${{ steps.source.outputs.ron_sha }}
+          OWNER: ${{ github.repository_owner }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ORCHESTRATOR_SHA="$(git -C orchestrator rev-parse HEAD)"
+
+          ./orchestrator/target/release/standardizer-data-orchestrator run             --source-directory "$GITHUB_WORKSPACE/ron"             --destination-directory "$GITHUB_WORKSPACE/bin"             --source-repository "$OWNER/standardizer-data-ron"             --source-revision "$RON_SHA"             --generator-version "$GENERATOR_VERSION"             --orchestrator-revision "$ORCHESTRATOR_SHA"

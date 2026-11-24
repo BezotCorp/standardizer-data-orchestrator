@@ -1,0 +1,40 @@
+name: Worker Guard
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Require dev as source branch
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event.pull_request.head.ref }}" != "dev" ]; then
+            echo "::error::Pull requests into main must come from dev."
+            exit 1
+          fi
+
+      - name: Checkout dev
+        uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+
+      - name: Verify dev contains main
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git fetch origin main
+
+          if ! git merge-base --is-ancestor origin/main HEAD; then
+            echo "::error::dev does not contain the current main branch."
+            exit 1
+          fi
