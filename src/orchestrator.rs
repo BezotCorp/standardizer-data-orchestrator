@@ -91,12 +91,6 @@ impl Orchestrator {
     ) -> Result<(), String> {
         command::run(
             Command::new("standardizer-generate-data")
-                .arg("check")
-                .arg(source_directory),
-        )?;
-
-        command::run(
-            Command::new("standardizer-generate-data")
                 .arg("generate")
                 .arg(source_directory)
                 .arg(destination_directory),
